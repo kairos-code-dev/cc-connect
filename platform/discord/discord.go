@@ -47,8 +47,9 @@ type progressPlatform struct {
 type Platform struct {
 	token                      string
 	allowFrom                  string
-	allowBotsFrom              string // explicit bot IDs; bots still require a direct mention
-	guildID                    string // optional: per-guild registration (instant) vs global (up to 1h propagation)
+	allowBotsFrom              string          // explicit bot IDs; bots still require a direct mention
+	replyAllChannels           map[string]bool // human messages in these channels do not need a mention
+	guildID                    string          // optional: per-guild registration (instant) vs global (up to 1h propagation)
 	progressStyle              string
 	groupReplyAllGuilds        []string // guild IDs where groupReplyAll is active; "*" = all guilds
 	shareSessionInChannel      bool
@@ -92,6 +93,17 @@ func New(opts map[string]any) (core.Platform, error) {
 		}
 	}
 	guildID, _ := opts["guild_id"].(string)
+	replyAllChannels := make(map[string]bool)
+	if channelIDs, _ := opts["reply_all_channels"].(string); channelIDs != "" {
+		for _, id := range strings.Split(channelIDs, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				if id == "*" {
+					return nil, fmt.Errorf("discord: reply_all_channels requires explicit channel IDs")
+				}
+				replyAllChannels[id] = true
+			}
+		}
+	}
 	var groupReplyAllGuilds []string
 	if guilds, _ := opts["group_reply_all_guilds"].(string); guilds != "" {
 		for _, g := range strings.Split(guilds, ",") {
@@ -139,6 +151,7 @@ func New(opts map[string]any) (core.Platform, error) {
 		token:                      token,
 		allowFrom:                  allowFrom,
 		allowBotsFrom:              allowBotsFrom,
+		replyAllChannels:           replyAllChannels,
 		guildID:                    guildID,
 		progressStyle:              progressStyle,
 		groupReplyAllGuilds:        groupReplyAllGuilds,
@@ -481,6 +494,12 @@ func (p *Platform) RegisterCommands(commands []core.BotCommandInfo) error {
 
 	var cmds []*discordgo.ApplicationCommand
 	for _, c := range commands {
+		// Namespaced skill IDs are valid engine commands but Discord forbids
+		// colons in slash command names. One invalid name rejects the bulk list.
+		if strings.Contains(c.Command, ":") {
+			slog.Warn("discord: skipping namespaced slash command", "command", c.Command)
+			continue
+		}
 		if len(c.Command) > 32 {
 			slog.Warn("discord: command name > 32 skip " + c.Command)
 			continue

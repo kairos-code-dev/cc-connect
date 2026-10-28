@@ -1370,6 +1370,7 @@ app_secret = "your-feishu-app-secret"
 # token = "your-discord-bot-token"
 # allow_from = "*"  # Allowed Discord user IDs / 允许的 Discord 用户 ID
 # allow_bots_from = "123456789,987654321"  # Explicit trusted bot IDs; bots always need a direct user/role mention.
+# reply_all_channels = "123456789"  # Human messages in these channels need no mention; other channels keep their mention policy.
 # guild_id = ""     # Optional: set for instant slash command registration (per-guild)
 #                   # 可选：设置后 slash 命令秒级生效（仅该服务器）
 # group_reply_all = false  # If true, respond to ALL guild messages without @mention / 设为 true 群聊无需 @ 也响应

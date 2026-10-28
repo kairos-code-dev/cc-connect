@@ -31,7 +31,7 @@ func (p *Platform) allowMessageSender(m *discordgo.MessageCreate, botID string) 
 func (p *Platform) requiresMessageMention(m *discordgo.MessageCreate) bool {
 	// Even in reply-all guilds, agent-to-agent messages must explicitly target
 	// this bot. Ordinary unmentioned answers must not wake every other agent.
-	return m.Author.Bot || (m.GuildID != "" && !p.isGroupReplyAllGuild(m.GuildID))
+	return m.Author.Bot || (m.GuildID != "" && !p.isGroupReplyAllGuild(m.GuildID) && !p.replyAllChannels[m.ChannelID])
 }
 
 func botRequestContent(m *discordgo.MessageCreate) string {

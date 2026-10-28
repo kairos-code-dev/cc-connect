@@ -71,3 +71,27 @@ func TestBotPolicy_DefaultAndHumanWildcardStillRejectBots(t *testing.T) {
 		t.Fatal("nil message must be rejected")
 	}
 }
+
+func TestBotPolicy_ReplyAllChannelsOnlyAffectsHumansInNamedChannel(t *testing.T) {
+	platform, err := New(map[string]any{"token": "test-token", "progress_style": "legacy", "reply_all_channels": " own-channel,second-channel "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := platform.(*Platform)
+	m := &discordgo.MessageCreate{Message: &discordgo.Message{GuildID: "guild", ChannelID: "own-channel", Author: &discordgo.User{ID: "human"}}}
+	if p.requiresMessageMention(m) {
+		t.Fatal("human message in dedicated channel must not need mention")
+	}
+	m.ChannelID = "general"
+	if !p.requiresMessageMention(m) {
+		t.Fatal("other guild channels must still require mention")
+	}
+	m.ChannelID = "second-channel"
+	m.Author.Bot = true
+	if !p.requiresMessageMention(m) {
+		t.Fatal("dedicated channel must not enable unmentioned bot loops")
+	}
+	if _, err := New(map[string]any{"token": "test-token", "reply_all_channels": "*"}); err == nil {
+		t.Fatal("channel wildcard must not silently enable unsolicited guild replies")
+	}
+}

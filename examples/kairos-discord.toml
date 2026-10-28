@@ -29,6 +29,7 @@ type = "discord"
 token = "REPLACE_WITH_THIS_BOTS_TOKEN"
 allow_from = "REPLACE_WITH_HUMAN_OWNER_ID"
 allow_bots_from = "REPLACE_WITH_TRUSTED_BOT_ID,REPLACE_WITH_ANOTHER_BOT_ID"
+reply_all_channels = "REPLACE_WITH_THIS_BOTS_CHANNEL_ID"
 share_session_in_channel = true
 progress_style = "compact"
 # By default, guild messages must mention this bot. Configure reply-all only
