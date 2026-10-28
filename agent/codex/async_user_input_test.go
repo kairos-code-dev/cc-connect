@@ -59,6 +59,7 @@ func TestAppServerSession_AsyncUserInputIgnoresChildThread(t *testing.T) {
 
 type asyncSteerWriter struct {
 	s       *appServerSession
+	rpcErr  *rpcError
 	request struct {
 		ID     int64          `json:"id"`
 		Method string         `json:"method"`
@@ -70,7 +71,7 @@ func (w *asyncSteerWriter) Write(p []byte) (int, error) {
 	if err := json.Unmarshal(p, &w.request); err != nil {
 		return 0, err
 	}
-	w.s.handleResponse(rpcResponseEnvelope{ID: w.request.ID, Result: json.RawMessage(`{"turnId":"active"}`)})
+	w.s.handleResponse(rpcResponseEnvelope{ID: w.request.ID, Result: json.RawMessage(`{"turnId":"active"}`), Error: w.rpcErr})
 	return len(p), nil
 }
 func (*asyncSteerWriter) Close() error { return nil }
@@ -94,5 +95,51 @@ func TestAppServerSession_SteerUserInputUsesActiveTurn(t *testing.T) {
 	s.currentTurn = ""
 	if steered, err := s.SteerUserInput("late answer"); err != nil || steered {
 		t.Fatalf("idle answer = %v, %v; want ordinary Send path", steered, err)
+	}
+}
+
+func TestAppServerSession_OrdinaryLiveInputRequiresOptIn(t *testing.T) {
+	s := &appServerSession{ctx: context.Background(), currentTurn: "active", pending: make(map[int64]chan rpcResponseEnvelope)}
+	s.threadID.Store("parent")
+	w := &asyncSteerWriter{s: s}
+	s.stdin = w
+	if ok, err := s.SteerMessage("status?"); ok || err != nil {
+		t.Fatalf("default live input = %v, %v", ok, err)
+	}
+	s.steerWhileBusy = true
+	if ok, err := s.SteerMessage("status?"); !ok || err != nil {
+		t.Fatalf("enabled live input = %v, %v", ok, err)
+	}
+	if w.request.Method != "turn/steer" || w.request.Params["expectedTurnId"] != "active" {
+		t.Fatalf("wrong RPC: %#v", w.request)
+	}
+	if _, err := New(map[string]any{"backend": "exec", "steer_while_busy": true}); err == nil {
+		t.Fatal("exec backend cannot support live input")
+	}
+	a := &Agent{backend: "app_server", steerWhileBusy: true}
+	if a.WorkspaceAgentOptions()["steer_while_busy"] != true {
+		t.Fatal("workspace cloning dropped live-input option")
+	}
+}
+
+func TestAppServerSession_LiveInputFallsBackOnlyOnExplicitIdleRejection(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		err       *rpcError
+		wantError bool
+	}{
+		{"turn ended", &rpcError{Code: -32600, Message: "No active turn to steer"}, false},
+		{"other rejection", &rpcError{Code: -32600, Message: "Expected turn ID does not match active turn"}, true},
+		{"server failure", &rpcError{Code: -32603, Message: "Internal error"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &appServerSession{ctx: context.Background(), currentTurn: "active", steerWhileBusy: true, pending: make(map[int64]chan rpcResponseEnvelope)}
+			s.threadID.Store("parent")
+			s.stdin = &asyncSteerWriter{s: s, rpcErr: tc.err}
+			accepted, err := s.SteerMessage("status?")
+			if accepted || (err != nil) != tc.wantError {
+				t.Fatalf("SteerMessage = %v, %v; want accepted=false, error=%v", accepted, err, tc.wantError)
+			}
+		})
 	}
 }

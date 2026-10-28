@@ -1,0 +1,36 @@
+# Copy outside the repository and fill in your own values. Never commit real tokens.
+language = "en"
+
+[stream_preview]
+enabled = true
+interval_ms = 1000
+min_delta_chars = 10
+max_chars = 1900
+
+[[projects]]
+name = "hep7"
+
+[projects.agent]
+type = "codex"
+
+[projects.agent.options]
+work_dir = "/path/to/project"
+backend = "app_server"
+app_server_url = "stdio://"
+steer_while_busy = true
+mode = "full-auto"
+# Optional: a separate already-authenticated Codex home.
+# codex_home = "/path/to/codex-home"
+
+[[projects.platforms]]
+type = "discord"
+
+[projects.platforms.options]
+token = "REPLACE_WITH_THIS_BOTS_TOKEN"
+allow_from = "REPLACE_WITH_HUMAN_OWNER_ID"
+allow_bots_from = "REPLACE_WITH_TRUSTED_BOT_ID,REPLACE_WITH_ANOTHER_BOT_ID"
+share_session_in_channel = true
+progress_style = "compact"
+# By default, guild messages must mention this bot. Configure reply-all only
+# if the bot's channel permissions restrict it to the intended human chat.
+# group_reply_all_guilds = "REPLACE_WITH_GUILD_ID"

@@ -2,6 +2,7 @@ package codex
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -69,3 +70,21 @@ func (s *appServerSession) SteerUserInput(prompt string) (bool, error) {
 }
 
 var _ core.UserInputSteerer = (*appServerSession)(nil)
+
+// Ordinary messages opt in separately from answers to async agent questions.
+// Both use the same expected-turn guard and preserve the active conversation.
+func (s *appServerSession) SteerMessage(prompt string) (bool, error) {
+	if !s.steerWhileBusy {
+		return false, nil
+	}
+	accepted, err := s.SteerUserInput(prompt)
+	var rejection *rpcError
+	if errors.As(err, &rejection) && rejection.Code == -32600 && strings.Contains(strings.ToLower(rejection.Message), "no active turn") {
+		// The turn ended between reading currentTurn and the RPC. This is an
+		// explicit server rejection, so the ordinary queue can safely retry it.
+		return false, nil
+	}
+	return accepted, err
+}
+
+var _ core.LiveInputSteerer = (*appServerSession)(nil)

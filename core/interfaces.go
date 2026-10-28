@@ -403,6 +403,13 @@ type UserInputSteerer interface {
 	SteerUserInput(prompt string) (bool, error)
 }
 
+// LiveInputSteerer optionally accepts ordinary text while a turn is running.
+// False with no error means the caller should use the normal queue. An error
+// means delivery could not be confirmed and must not be blindly sent twice.
+type LiveInputSteerer interface {
+	SteerMessage(prompt string) (bool, error)
+}
+
 // ToolAuthorizer is an optional interface for agents that support dynamic tool authorization.
 type ToolAuthorizer interface {
 	AddAllowedTools(tools ...string) error
