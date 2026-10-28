@@ -50,7 +50,7 @@ Codex 옵션 `backend = "app_server"`, `app_server_url = "stdio://"`, `steer_whi
 Go 버전은 `go.mod`를 따릅니다. 먼저 Node.js와 pnpm 10으로 웹 자산을 빌드해야 기본 Go 빌드와 전체 검사를 실행할 수 있습니다.
 
 ```sh
-git clone https://github.com/kairos-code-dev/cc-connect.git
+git clone --branch fix/discord-bot-live-input https://github.com/kairos-code-dev/cc-connect.git
 cd cc-connect
 git remote add upstream https://github.com/chenhg5/cc-connect.git
 cd web
@@ -62,6 +62,8 @@ go build -o cc-connect ./cmd/cc-connect
 
 Windows에서는 출력 이름을 `cc-connect.exe`로 지정합니다. 바이너리와 실제 설정·토큰은 저장소에 커밋하지 않습니다. 원본 업데이트는 `git fetch upstream` 후 별도 브랜치에서 `upstream/main`을 병합하고, 아래 검사를 거쳐 관리 저장소에 PR로 반영합니다. 이미 공유한 이력에 강제 푸시하지 않습니다.
 
+현재 변경은 PR #1의 시험 브랜치에 있습니다. PR 병합 전에는 위와 같이 브랜치를 지정해야 수정판을 빌드할 수 있습니다.
+
 ## 검증
 
 ```sh
@@ -71,3 +73,5 @@ go test ./...
 ```
 
 새 회귀 시험은 작업이 끝나지 않은 상태에서 추가 질문 두 개에 대한 답이 플랫폼에 표시되는지, 같은 세션을 유지하는지, 봇 허용 목록과 멘션 제한이 적용되는지 검사합니다. 이 시험들은 모의 모델과 모의 플랫폼을 사용합니다. 실제 Discord와 Codex 모델의 응답 속도는 운영 전 별도 시험해야 합니다.
+
+2026-10-28 Windows 운영 시험에서는 Discord Gateway 연결과 slash 명령 53개 등록을 확인했습니다. 일회성 내부 시험 요청으로 실제 Codex 모델(`gpt-6.1-sol`, effort `low`)을 호출했고, 약 7초의 turn 처리 후 Discord에 계산 답변이 게시된 것을 다시 읽어 확인했습니다. 이는 내부 요청 → 모델 → Discord 전송 시험이며, 실제 사용자 멘션 수신 및 작업 중 추가 입력 시험과는 별개입니다.
