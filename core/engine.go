@@ -552,6 +552,7 @@ type queuedMessage struct {
 
 // interactiveState tracks a running interactive agent session and its permission state.
 type interactiveState struct {
+	liveInputMu  sync.Mutex // serialize ordinary mid-turn submissions without blocking event delivery
 	agentSession AgentSession
 	// busySession is the core.Session whose busy lock guards the in-flight
 	// turn. Set by getOrCreateInteractiveStateWith so /stop can release the
@@ -3252,6 +3253,9 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 			}
 		}
 		// ── end self-heal; queueing path below is unchanged ────────────────
+		if e.trySteerBusyMessage(p, msg, interactiveKey, session, sessions) {
+			return
+		}
 		// Session is busy — try to queue the message for the running turn
 		// so the agent processes it immediately after the current turn ends.
 		if e.queueMessageForBusySession(p, msg, interactiveKey) {

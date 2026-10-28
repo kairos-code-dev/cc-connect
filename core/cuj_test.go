@@ -2796,3 +2796,65 @@ type reasoningJourneyPlatform struct {
 func (p *reasoningJourneyPlatform) SetCardNavigationHandler(h CardNavigationHandler) {
 	p.navigation = h
 }
+
+// User actions: start a task that stays open, ask two follow-up questions,
+// then finish the original task. Both answers must be visible before it ends.
+func TestCUJ_A10_LiveInputAnswersWhileOriginalTaskIsRunning(t *testing.T) {
+	p := &cujStreamingPlatform{stubPlatformEngine: stubPlatformEngine{n: "test"}}
+	s := &liveInputTestSession{&asyncInputSession{events: make(chan Event, 16)}}
+	e := NewEngine("test", &controllableAgent{nextSession: s}, []Platform{p}, "", LangEnglish)
+	e.SetStreamPreviewCfg(StreamPreviewCfg{Enabled: true, IntervalMs: 1, MinDeltaChars: 1, MaxChars: 2000})
+	t.Cleanup(func() { _ = e.Stop() })
+	const key = "test:shared-channel"
+	send := func(id, content string, timestamp int64) {
+		e.ReceiveMessage(p, &Message{SessionKey: key, Platform: "test", UserID: "human", UserName: "Owner",
+			MessageID: id, Content: content, ReplyCtx: "original-channel", UserMessageTimeMs: timestamp})
+	}
+	visible := func(text string) bool {
+		for _, candidate := range p.getSent() {
+			if strings.Contains(candidate, text) {
+				return true
+			}
+		}
+		for _, candidate := range p.getPreviewOpens() {
+			if strings.Contains(candidate, text) {
+				return true
+			}
+		}
+		for _, candidate := range p.getPreviewUpdates() {
+			if strings.Contains(candidate.Content, text) {
+				return true
+			}
+		}
+		return false
+	}
+	send("first", "long-running task", 1000)
+	waitAsyncInput(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return len(s.sent) == 1 })
+	send("second", "where are you now?", 2000)
+	waitAsyncInput(t, func() bool { return visible("Immediate answer: where are you now?") })
+	if !e.sessions.GetOrCreateActive(key).Busy() {
+		t.Fatal("answer incorrectly ended the original task")
+	}
+	send("third", "continue after answering", 3000)
+	waitAsyncInput(t, func() bool { return visible("Immediate answer: continue after answering") })
+	s.mu.Lock()
+	if len(s.sent) != 1 || len(s.steered) != 2 {
+		t.Fatalf("extra turns or missing inputs: sends=%v steer=%v", s.sent, s.steered)
+	}
+	s.mu.Unlock()
+	s.events <- Event{Type: EventResult, Content: "Original task finished", Done: true}
+	waitAsyncInput(t, func() bool { return !e.sessions.GetOrCreateActive(key).Busy() })
+	if visible(e.i18n.T(MsgMessageQueued)) {
+		t.Fatal("live inputs were incorrectly queued")
+	}
+	history := e.sessions.GetOrCreateActive(key).GetHistory(0)
+	count := 0
+	for _, h := range history {
+		if h.Role == "user" && (strings.Contains(h.Content, "where are you") || strings.Contains(h.Content, "continue after")) {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Fatalf("follow-up history count=%d, want 2", count)
+	}
+}

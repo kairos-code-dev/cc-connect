@@ -47,7 +47,9 @@ type progressPlatform struct {
 type Platform struct {
 	token                      string
 	allowFrom                  string
-	guildID                    string // optional: per-guild registration (instant) vs global (up to 1h propagation)
+	allowBotsFrom              string          // explicit bot IDs; bots still require a direct mention
+	replyAllChannels           map[string]bool // human messages in these channels do not need a mention
+	guildID                    string          // optional: per-guild registration (instant) vs global (up to 1h propagation)
 	progressStyle              string
 	groupReplyAllGuilds        []string // guild IDs where groupReplyAll is active; "*" = all guilds
 	shareSessionInChannel      bool
@@ -84,7 +86,24 @@ func New(opts map[string]any) (core.Platform, error) {
 	}
 	allowFrom, _ := opts["allow_from"].(string)
 	core.CheckAllowFrom("discord", allowFrom)
+	allowBotsFrom, _ := opts["allow_bots_from"].(string)
+	for _, id := range strings.Split(allowBotsFrom, ",") {
+		if strings.TrimSpace(id) == "*" {
+			return nil, fmt.Errorf("discord: allow_bots_from requires explicit bot IDs, not '*'")
+		}
+	}
 	guildID, _ := opts["guild_id"].(string)
+	replyAllChannels := make(map[string]bool)
+	if channelIDs, _ := opts["reply_all_channels"].(string); channelIDs != "" {
+		for _, id := range strings.Split(channelIDs, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				if id == "*" {
+					return nil, fmt.Errorf("discord: reply_all_channels requires explicit channel IDs")
+				}
+				replyAllChannels[id] = true
+			}
+		}
+	}
 	var groupReplyAllGuilds []string
 	if guilds, _ := opts["group_reply_all_guilds"].(string); guilds != "" {
 		for _, g := range strings.Split(guilds, ",") {
@@ -131,6 +150,8 @@ func New(opts map[string]any) (core.Platform, error) {
 	base := &Platform{
 		token:                      token,
 		allowFrom:                  allowFrom,
+		allowBotsFrom:              allowBotsFrom,
+		replyAllChannels:           replyAllChannels,
 		guildID:                    guildID,
 		progressStyle:              progressStyle,
 		groupReplyAllGuilds:        groupReplyAllGuilds,
@@ -473,6 +494,12 @@ func (p *Platform) RegisterCommands(commands []core.BotCommandInfo) error {
 
 	var cmds []*discordgo.ApplicationCommand
 	for _, c := range commands {
+		// Namespaced skill IDs are valid engine commands but Discord forbids
+		// colons in slash command names. One invalid name rejects the bulk list.
+		if strings.Contains(c.Command, ":") {
+			slog.Warn("discord: skipping namespaced slash command", "command", c.Command)
+			continue
+		}
 		if len(c.Command) > 32 {
 			slog.Warn("discord: command name > 32 skip " + c.Command)
 			continue
@@ -629,18 +656,13 @@ func (p *Platform) buildSession() (*discordgo.Session, error) {
 			return
 		}
 
-		if m.Author.Bot || m.Author.ID == botID {
+		if !p.allowMessageSender(m, botID) {
 			return
 		}
 		if core.IsOldMessage(m.Timestamp) {
 			slog.Debug("discord: ignoring old message after restart", "timestamp", m.Timestamp)
 			return
 		}
-		if !core.AllowList(p.allowFrom, m.Author.ID) {
-			slog.Debug("discord: message from unauthorized user", "user", m.Author.ID)
-			return
-		}
-
 		// In guild channels, only respond when the bot is @mentioned (unless group_reply_all).
 		// Check both user mentions and role mentions (Discord auto-creates a managed role
 		// for each bot; users may @ the role instead of the user).
@@ -649,8 +671,8 @@ func (p *Platform) buildSession() (*discordgo.Session, error) {
 			p.cacheBotRoleIDForGuild(s, m.GuildID, nil)
 			botRoleID = p.botRoleIDForGuild(m.GuildID)
 		}
-		if m.GuildID != "" && !p.isGroupReplyAllGuild(m.GuildID) {
-			if !isDiscordBotMention(m, botID, botRoleID, p.respondToAtEveryoneAndHere) {
+		if p.requiresMessageMention(m) {
+			if !isDiscordBotMention(m, botID, botRoleID, p.respondToAtEveryoneAndHere && !m.Author.Bot) {
 				slog.Debug("discord: ignoring guild message without bot mention", "channel", m.ChannelID)
 				return
 			}
@@ -698,7 +720,7 @@ func (p *Platform) buildSession() (*discordgo.Session, error) {
 			ChannelID: m.ChannelID,
 			MessageID: m.ID,
 			UserID:    m.Author.ID, UserName: m.Author.Username,
-			Content: m.Content, Images: images, Files: files, Audio: audio, ReplyCtx: rctx,
+			Content: botRequestContent(m), Images: images, Files: files, Audio: audio, ReplyCtx: rctx,
 		}
 		msg.ChatName, _ = p.ResolveChannelName(m.ChannelID)
 		p.dispatchMessage(msg)

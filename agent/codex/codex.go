@@ -38,6 +38,7 @@ type Agent struct {
 	reasoningEffort string
 	mode            string // "suggest" | "auto-edit" | "full-auto" | "yolo"
 	backend         string // "exec" | "app_server"
+	steerWhileBusy  bool
 	appServerURL    string
 	codexHome       string
 	systemPrompt    string
@@ -60,12 +61,16 @@ func New(opts map[string]any) (core.Agent, error) {
 	reasoningEffort, _ := opts["reasoning_effort"].(string)
 	mode, _ := opts["mode"].(string)
 	backend, _ := opts["backend"].(string)
+	steerWhileBusy, _ := opts["steer_while_busy"].(bool)
 	appServerURL, _ := opts["app_server_url"].(string)
 	codexHome, _ := opts["codex_home"].(string)
 	systemPrompt, _ := opts["system_prompt"].(string)
 	appendPrompt, _ := opts["append_system_prompt"].(string)
 	mode = normalizeMode(mode)
 	backend = normalizeBackend(backend)
+	if steerWhileBusy && backend != "app_server" {
+		return nil, fmt.Errorf("codex: steer_while_busy requires backend=app_server")
+	}
 	appServerURL = normalizeAppServerURL(appServerURL)
 
 	cmd, cliExtraArgs := core.ParseCmdOpts(opts, "")
@@ -100,6 +105,7 @@ func New(opts map[string]any) (core.Agent, error) {
 		reasoningEffort: normalizeReasoningEffort(reasoningEffort),
 		mode:            mode,
 		backend:         backend,
+		steerWhileBusy:  steerWhileBusy,
 		appServerURL:    appServerURL,
 		codexHome:       strings.TrimSpace(codexHome),
 		systemPrompt:    strings.TrimSpace(systemPrompt),
@@ -496,6 +502,7 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 	model := a.model
 	reasoningEffort := a.reasoningEffort
 	backend := a.backend
+	steerWhileBusy := a.steerWhileBusy
 	appServerURL := a.appServerURL
 	codexHome := a.codexHome
 	systemPrompt := a.systemPrompt
@@ -530,7 +537,11 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 	}
 
 	if backend == "app_server" {
-		return newAppServerSession(ctx, cliBin, cliExtraArgs, appServerURL, workDir, model, reasoningEffort, mode, sessionID, baseURL, provName, extraEnv, codexHome, systemPrompt, appendPrompt)
+		session, err := newAppServerSession(ctx, cliBin, cliExtraArgs, appServerURL, workDir, model, reasoningEffort, mode, sessionID, baseURL, provName, extraEnv, codexHome, systemPrompt, appendPrompt)
+		if err == nil {
+			session.steerWhileBusy = steerWhileBusy
+		}
+		return session, err
 	}
 	if codexHome != "" {
 		extraEnv = append(extraEnv, "CODEX_HOME="+codexHome)
@@ -586,8 +597,9 @@ func (a *Agent) WorkspaceAgentOptions() map[string]any {
 	defer a.mu.RUnlock()
 
 	opts := map[string]any{
-		"mode":    a.mode,
-		"backend": a.backend,
+		"mode":             a.mode,
+		"backend":          a.backend,
+		"steer_while_busy": a.steerWhileBusy,
 	}
 	if a.cmd != "" {
 		opts["cmd"] = append([]string{a.cmd}, a.cliExtraArgs...)

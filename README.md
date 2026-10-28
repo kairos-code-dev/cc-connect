@@ -2,6 +2,9 @@
   <img src="./docs/images/banner.svg" alt="CC-Connect Banner" width="800"/>
 </p>
 
+> Kairos-maintained fork: [Discord collaboration changes and setup](./docs/kairos-discord.md).
+> Adds opt-in trusted bot mentions and live input for active Codex turns.
+
 <p align="center">
   <a href="https://github.com/chenhg5/cc-connect/actions/workflows/ci.yml">
     <img src="https://github.com/chenhg5/cc-connect/actions/workflows/ci.yml/badge.svg" alt="CI Status"/>
